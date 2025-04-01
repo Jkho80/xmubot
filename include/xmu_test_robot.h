@@ -6,7 +6,6 @@
 #include <math.h>
 #include <cstring>
 #include <string.h>
-#include <stdlib>
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdbool.h>
@@ -53,12 +52,12 @@ using namespace std;
 
 
 // 数据传输标识位 和 帧头帧尾的标识位
-#define SEND_DATA 1 // 标识位，用于指示发送数据给机器人的操作，用作校验或状态标志
-#define READ_DATA 0 // 标识位，用于指示从机器人读取数据的操作，用作校验或状态标志
+#define SEND_DATA_BCC 1 // 标识位，用于指示发送数据给机器人的操作，用作校验或状态标志
+#define READ_DATA_BCC 0 // 标识位，用于指示从机器人读取数据的操作，用作校验或状态标志
 #define FRAME_HEAD 0X7B // 定义帧头字节，用作数据包的开始标记，十六进制表示为{ (ASCII)
 #define FRAME_TAIL 0X7D // 定义帧尾字节，用作数据包的结束标记，十六进制表示为} (ASCII)
 
-#define RECIEVE_DATA_SIZE 24 // 定义从STM32接收到的数据包的大小，固定为24字节
+#define RECEIVE_DATA_SIZE 24 // 定义从STM32接收到的数据包的大小，固定为24字节
 #define SEND_DATA_SIZE 11 // 定义发送到STM32的数据包的大小，最大为11字节
 
 
@@ -71,12 +70,15 @@ using namespace std;
 #define AUTOCHARGE_DATA_SIZE 8 // 定义从STM32接收到的自动充电数据包的大小，固定为8字节
 
 
-
+//与IMU陀螺仪设置的量程有关，量程±500°，对应数据范围±32768
+//陀螺仪原始数据转换位弧度(rad)单位，1/65.5/57.30=0.00026644
 #define GYROSCOPE_RATIO 0.00026644f // 定义了将陀螺仪原始数据（单位：度数）转换为弧度（rad）的转换比例。这个比例是基于陀螺仪的量程（±500°）和数据范围（±32768）计算得出的。
 
-#define ACCELEROMETER_RATIO 0.000128f // 定义了将加速度计原始数据（单位：未知，但基于上下文应为某种与g相关的单位）转换为米每二次方秒（m/s^2）的转换比例。这个比例是基于加速度计的量程（±2g）和数据范围（±32768）计算得出的。
+//与IMU加速度计设置的量程有关，量程±2g，对应数据范围±32768
+//加速度计原始数据转换位m/s^2单位，32768/2g=32768/19.6=1671.84
+#define ACCELEROMETER_RATIO 1671.84f // 定义了将加速度计原始数据（单位：未知，但基于上下文应为某种与g相关的单位）转换为米每二次方秒（m/s^2）的转换比例。这个比例是基于加速度计的量程（±2g）和数据范围（±32768）计算得出的。
 
-extern sensor_msgs::msg::Imu MPU6050; // 于存储IMU话题的数据。这个变量可能在其他文件中定义和初始化。
+extern sensor_msgs::msg::Imu imu_mpu; // 于存储IMU话题的数据。这个变量可能在其他文件中定义和初始化。
 
 
 // odom_position_Cov 和 odom_position_Cov2：两个协方差矩阵，用于描述里程计位置数据的不确定性。
@@ -123,7 +125,7 @@ typedef struct _DISTANCE_DATA_ {
     float direction_225;   // 225度方向上的超声波测量距离
     float direction_270;   // 270度方向上的超声波测量距离
     float direction_315;   // 315度方向上的超声波测量距离
-} supersonic_range_data;   
+} supersonic_range;   
 
 
 // 用途：存储速度或位置数据。
@@ -132,7 +134,7 @@ typedef struct _VEL_POS_DATA_ {
     float x;   // X轴方向上的速度或位置
     float y;   // Y轴方向上的速度或位置
     float z;   // Z轴方向上的速度或位置
-} vel_pos_data;
+} vel_pos;
 
 // 用途：存储IMU（惯性测量单元）数据。
 // 成员变量：包含加速度计和陀螺仪在X、Y、Z轴方向上的原始数据。
@@ -154,13 +156,13 @@ typedef struct _SEND_VEL_DATA_ {
     float z_speed;                // Z轴方向上的速度
     unsigned char frame_head;     // 数据帧的头部标记
     unsigned char frame_tail;     // 数据帧的尾部标记
-} send_vel_data;
+} send_vel;
 
 
 // 用途：封装从机器人接收到的速度数据。
 // 成员变量：包括速度或位置数据缓冲区、X、Y、Z轴方向上的速度，数据帧的头部和尾部标记，以及电源电压。
 typedef struct _RECEIVE_VEL_DATA_ {
-    uint8_t rx[RECIEVE_DATA_SIZE]; // 用于接收的速度数据缓冲区
+    uint8_t rx[RECEIVE_DATA_SIZE]; // 用于接收的速度数据缓冲区
     uint8_t stop_flag;                // 停止标志，用于指示是否需要停止机器人的运动
     float x_speed;                       // X轴方向上的速度
     float y_speed;                       // Y轴方向上的速度
@@ -168,7 +170,7 @@ typedef struct _RECEIVE_VEL_DATA_ {
     unsigned char frame_head;      // 数据帧的头部标记
     unsigned char frame_tail;      // 数据帧的尾部标记
     float voltage;              // 电源电压
-} receive_vel_data;
+} receive_vel;
 
 
 // 用途：封装从机器人接收到的距离数据。
@@ -177,16 +179,16 @@ typedef struct _DISTANCE_DATA_ {
     uint8_t rx[DISTANCE_DATA_SIZE]; // 用于接收的距离数据缓冲区
     unsigned char frame_head;       // 数据帧的头部标记
     unsigned char frame_tail;       // 数据帧的尾部标记
-} distance_data;
+} distances;
 
 
 // 用途：封装从机器人接收到的自动回充数据。
 // 成员变量：包括自动回充数据缓冲区以及数据帧的头部和尾部标记。
 typedef struct _AUTOCHARGE_DATA_ {
-    uint8_t rx[AUTOCHARGE_DATA_SIZE]; // 用于接收的自动回充数据缓冲区
+    uint8_t rx[AUTOCHARGE_HEAD]; // 用于接收的自动回充数据缓冲区
     unsigned char frame_head;         // 数据帧的头部标记
     unsigned char frame_tail;         // 数据帧的尾部标记
-} autocharge_data;
+} autocharge;
 
 
 
@@ -269,20 +271,20 @@ private:
     int serial_timeout_;
 
     // 用于接收从机器人传来的速度数据
-    receive_vel_data receive_vel_; // 注意：这里应该是 receive_vel_data 类型，但原代码中写成了 recieve_vel_data，可能是个拼写错误
+    receive_vel receive_vel_data_; // 注意：这里应该是 receive_vel_data 类型，但原代码中写成了 recieve_vel_data，可能是个拼写错误
     // 用于发送给机器人的速度数据
-    send_vel_data send_vel_;
+    send_vel send_vel_data_;
     // 用于存储从机器人接收到的距离数据
-    distance_data distance_;
+    distances distance_data_;
     // 用于存储从机器人接收到的自动回充数据
-    autocharge_data autocharge_;
+    autocharge autocharge_data_;
     // 用于存储超声波传感器在不同方向上的测量距离
-    supersonic_range_data supersonic_distance_;
+    supersonic_range supersonic_distance_data_;
     // 用于存储机器人的 位置，速度 数据
-    vel_pos_data robot_position_;
-    vel_pos_data robot_velocity_;
+    vel_pos robot_position_data_;
+    vel_pos robot_velocity_data_;
     // 用于存储IMU（惯性测量单元）的数据
-    imu_data MPU6050_data_;
+    imu_data imu_mpu_data_;
 
     // 指示机器人当前是否正在充电
     bool charging_ = false;
