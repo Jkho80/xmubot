@@ -27,17 +27,34 @@ xmu_test_robot::xmu_test_robot() : rclcpp::Node("xmu_test_robot"){
     
     this->declare_parameter<int>("serial_baud_rate");
     this->declare_parameter<string>("usart_port_name");
-    
+    this->declare_parameter<std::string>("odom_frame_id", "odom");
+    this->declare_parameter<std::string>("robot_frame_id", "base_footprint");
+    this->declare_parameter<std::string>("gyro_frame_id", "gyro_link");
+    this->declare_parameter<double>("odom_x_scale");
+    this->declare_parameter<double>("odom_y_scale");
+    this->declare_parameter<double>("odom_z_scale_positive");
+    this->declare_parameter<double>("odom_z_scale_negative");
 
+    this->get_parameter("serial_baud_rate", serial_baud_rate);
+    this->get_parameter("usart_port_name", usart_port_name);
+    this->get_parameter("odom_frame_id", odom_frame_id);
+    this->get_parameter("robot_frame_id", robot_frame_id);
+    this->get_parameter("gyro_frame_id", gyro_frame_id);
+    this->get_parameter("odom_x_scale", odom_x_scale);
+    this->get_parameter("odom_y_scale", odom_y_scale);
+    this->get_parameter("odom_z_scale_positive", odom_z_scale_positive);
+    this->get_parameter("odom_z_scale_negative", odom_z_scale_negative);
+
+    
 }
 
 void xmu_test_robot::Robot_Control() {
     last_ = rclcpp::Node::now();
     // 只有在 单线程 情况下才推荐使用以下方法存储 角度 的变换值
     // static float last_z = NAN;  // 初始化为非法值
-    static float cos_z = 0.0f;
-    static float sin_z = 0.0f;
-    static float atan2_z = 0.0f;
+    float cos_z = 0.0f;
+    float sin_z = 0.0f;
+    // float atan2_z = 0.0f;
 
 
     while(rclcpp::ok()){
@@ -103,7 +120,7 @@ void xmu_test_robot::Robot_Control() {
 
 
 bool xmu_test_robot::get_sensor_data() {
-    uint16_t transition_16 = 0;
+    uint16_t trans_16= 0;
     // static int flag_error = 0, temp = 1;
     static int count1, count2;
 
@@ -143,8 +160,8 @@ bool xmu_test_robot::get_sensor_data() {
                 // transition_16 |= (autocharge_data_.rx[1] << 8);
                 // transition_16 |= autocharge_data_.rx[2];
 
-                transition_16 = (autocharge_data_.rx[1] << 8) | autocharge_data_.rx[2];
-                ampere_ = transition_16 / 1000.0f;
+                trans_16= (autocharge_data_.rx[1] << 8) | autocharge_data_.rx[2];
+                ampere_ = trans_16/ 1000.0f;
                 // ampere_ = (transition_16 / 1000) + (transition_16 % 1000) * 0.001;
                 
                 // 红外接收状态通常用于指示机器人是否检测到了充电桩发出的红外信号。
@@ -203,8 +220,8 @@ bool xmu_test_robot::get_sensor_data() {
                 // transition_16 |= (receive_vel_data_.rx[20] << 8);
                 // transition_16 |= receive_vel_data_.rx[21];
 
-                transition_16 = (autocharge_data_.rx[20] << 8) | autocharge_data_.rx[21];
-                voltage_ = transition_16 / 1000.0f;
+                trans_16= (autocharge_data_.rx[20] << 8) | autocharge_data_.rx[21];
+                voltage_ = trans_16/ 1000.0f;
                 return true;
             }    
         }
@@ -250,85 +267,92 @@ void xmu_test_robot::publish_odom() {
     q.setRPY(0, 0, robot_position_data_.z);
     geometry_msgs::msg::Quaternion odom_quaternion_ = tf2::toMsg(q);
 
-    nav_msgs::mgs::Odometry odom_msg_;
-    odom_msg_.header.stamp = this->now();
-    odom_msg_.header.frame_id = odom_frame_id_;
-    odom_msg_.child_frame_id = robot_frame_id_;
+    nav_msgs::mgs::Odometry odom_msg;
+    odom_msg.header.stamp = this->now();
+    odom_msg.header.frame_id = odom_frame_id_;
+    odom_msg.child_frame_id = robot_frame_id_;
 
-    odom_msg_.pose.pose.position.x = robot_position_data_.x;
-    odom_msg_.pose.pose.position.y = robot_position_data_.y;
-    odom_msg_.pose.pose.position.z = robot_position_data_.z;
-    odom_msg_.pose.pose.orientation = odom_quaternion_;
+    odom_msg.pose.pose.position.x = robot_position_data_.x;
+    odom_msg.pose.pose.position.y = robot_position_data_.y;
+    odom_msg.pose.pose.position.z = robot_position_data_.z;
+    odom_msg.pose.pose.orientation = odom_quaternion_;
 
-    odom_msg_.twist.twist.linear.x = robot_velocity_data_.x;
-    odom_msg_.twist.twist.linear.y = robot_velocity_data_.y;
-    odom_msg_.twist.twist.angular.z = robot_velocity_data_.z;
+    odom_msg.twist.twist.linear.x = robot_velocity_data_.x;
+    odom_msg.twist.twist.linear.y = robot_velocity_data_.y;
+    odom_msg.twist.twist.angular.z = robot_velocity_data_.z;
 
     if((robot_vel_data_.x != 0) || (robot_vel_data_.y != 0) || (robot_vel_data_.z == 0)){
-        memcpy(&odom_msg_.pose.covariance, odom_position_Cov, sizeof(odom_position_Cov));
-        memcpy(&odom_msg_.twist.covariance, odom_twist_Cov, sizeof(odom_twist_Cov));
+        memcpy(&odom_msg.pose.covariance, odom_position_Cov, sizeof(odom_position_Cov));
+        memcpy(&odom_msg.twist.covariance, odom_twist_Cov, sizeof(odom_twist_Cov));
     }
     else{
-        memcpy(&odom_msg_.pose.covariance, odom_position_Cov2, sizeof(odom_position_Cov2));
-        memcpy(&odom_msg_.twist.covariance, odom_twist_Cov2, sizeof(odom_twist_Cov2));
+        memcpy(&odom_msg.pose.covariance, odom_position_Cov2, sizeof(odom_position_Cov2));
+        memcpy(&odom_msg.twist.covariance, odom_twist_Cov2, sizeof(odom_twist_Cov2));
     }
 
-    odom_pub_->publish(odom_msg_);
+    odom_pub_->publish(odom_msg);
 }
 
 void xmu_test_robot::publish_imu() {
-    sensor_msgs::msg::Imu imu_msg_;
+    sensor_msgs::msg::Imu imu_msg;
 
-    imu_msg_.header.stamp = this->now();
-    imu_msg_.header.frame_id = gyro_frame_id_;
+    imu_msg.header.stamp = this->now();
+    imu_msg.header.frame_id = gyro_frame_id_;
 
-    imu_msg_.orientation.x = imu_mpu_.orientation.x;
-    imu_msg_.orientation.y = imu_mpu_.orientation.y;
-    imu_msg_.orientation.z = imu_mpu_.orientation.z;
-    imu_msg_.orientation.w = imu_mpu_.orientation.w;
+    imu_msg.orientation.x = imu_mpu_.orientation.x;
+    imu_msg.orientation.y = imu_mpu_.orientation.y;
+    imu_msg.orientation.z = imu_mpu_.orientation.z;
+    imu_msg.orientation.w = imu_mpu_.orientation.w;
 
-    imu_msg_.angular_velocity.x = imu_mpu_.angular_velocity.x;
-    imu_msg_.angular_velocity.y = imu_mpu_.angular_velocity.y;
-    imu_msg_.angular_velocity.z = imu_mpu_.angular_velocity.z;
+    imu_msg.angular_velocity.x = imu_mpu_.angular_velocity.x;
+    imu_msg.angular_velocity.y = imu_mpu_.angular_velocity.y;
+    imu_msg.angular_velocity.z = imu_mpu_.angular_velocity.z;
 
-    imu_msg_.linear_acceleration.x = imu_mpu_.linear_acceleration.x;
-    imu_msg_.linear_acceleration.y = imu_mpu_.linear_acceleration.y;
-    imu_msg_.linear_acceleration.z = imu_mpu_.linear_acceleration.z;
+    imu_msg.linear_acceleration.x = imu_mpu_.linear_acceleration.x;
+    imu_msg.linear_acceleration.y = imu_mpu_.linear_acceleration.y;
+    imu_msg.linear_acceleration.z = imu_mpu_.linear_acceleration.z;
 
-    imu_msg_.orientation_covariance[0] = 1e6;
-    imu_msg_.orientation_covariance[4] = 1e6;
-    imu_msg_.orientation_covariance[8] = 1e-6;
+    imu_msg.orientation_covariance[0] = 1e6;
+    imu_msg.orientation_covariance[4] = 1e6;
+    imu_msg.orientation_covariance[8] = 1e-6;
     
-    imu_msg_.angular_velocity_covariance[0] = 1e6;
-    imu_msg_.angular_velocity_covariance[4] = 1e6;
-    imu_msg_.angular_velocity_covariance[8] = 1e6;
+    imu_msg.angular_velocity_covariance[0] = 1e6;
+    imu_msg.angular_velocity_covariance[4] = 1e6;
+    imu_msg.angular_velocity_covariance[8] = 1e6;
 
-    imu_pub_->publish(imu_msg_);
+    imu_pub_->publish(imu_msg);
 }
 
 void xmu_test_robot::publish_voltage() {
-    std_msgs::msg::Float32 voltage_msg_;
+    std_msgs::msg::Float32 voltage_msg;
 
     static float count_voltage_pub_ = 0;
     if(count_voltage_pub_++ > 10) {
         count_voltage_pub_ = 0;
-        voltage_msg_.data = voltage_;
-        charging_volt_pub_->publish(voltage_msg_);
+        voltage_msg.data = voltage_;
+        charging_volt_pub_->publish(voltage_msg);
     }
 }
 
+void xmu_test_robot::publish_ampere() {
+    std_msgs::msg::Float32 ampere_msg;
+    ampere_msg.data = ampere_;
+    charging_ampere_pub_->publish(ampere_msg);
+}
+
+
 
 void xmu_test_robot::publish_red() {
-    std_msgs::msg::UInt8 red_msg_;
-    red_msg_.data = red_target_;
-    red_pub_->publish(red_msg_);
+    std_msgs::msg::UInt8 red_msg;
+    red_msg.data = red_target_;
+    red_pub_->publish(red_msg);
 }
 
 
 void xmu_test_robot::publish_charging() {
     static bool last_charging;
-    std_msgs::msg::Bool charging_msg_;
-    charging_msg_.data = charging_;
+    std_msgs::msg::Bool charging_msg;
+    charging_msg.data = charging_;
 
     if (last_charging != charging_) {
         // last_charging == false && charging_ == true 表示充电器刚插上，开始充电
@@ -341,10 +365,136 @@ void xmu_test_robot::publish_charging() {
 }
 
 
+uint16_t xmu_test_robot::imu_transform(uint8_t high, uint8_t low) {
+    uint16_t trans_16 = (high << 8) | low;
+    return trans_16;
+}
+
+float xmu_test_robot::odom_transform(uint8_t high, uint8_t low) {
+    float result;
+    uint16_t trans_16 = (high << 8) | low;
+    result = trans_16 / 1000.0f;
+    return result;
+}
+
+void xmu_test_robot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr cmd_vel) {
+    short int16;
+
+    send_vel_data_.tx[0] = FRAME_HEAD;
+    send_vel_data_.tx[1] = autorecharge_;
+    send_vel_data_.tx[2] = 0x00;
+
+    int16 = cmd_vel->linear.x * 1000;
+    send_vel_data_.tx[4] = int16;
+    send_vel_data_.tx[3] = int16 >> 8;
+
+    int16 = cmd_vel->linear.y * 1000;
+    send_vel_data_.tx[6] = int16;
+    send_vel_data_.tx[5] = int16 >> 8;
+
+    int16 = cmd_vel->angular.z * 1000;
+    send_vel_data_.tx[8] = int16;
+    send_vel_data_.tx[7] = int16 >> 8;
+
+    send_vel_data_.tx[9] = check_sum(9, SEND_DATA_BCC);
+    send_vel_data_.tx[10] = FRAME_TAIL;
+    
+    try {
+        STM32_serial_->write(send_vel_data_.tx, SEND_DATA_SIZE);
+    } catch (serial::IOException& e)   {
+        RCLCPP_ERROR(this->get_logger(),("发送信息时出现错误"));
+    }
+}
 
 
+void xmu_test_robot::red_vel_callback(const geometry_msgs::msg::Twist::SharedPtr cmd_vel) {
+    short int16;
 
+    send_vel_data_.tx[0] = FRAME_HEAD;
+    send_vel_data_.tx[1] = 3;
+    send_vel_data_.tx[2] = 0x00;
 
+    int16 = cmd_vel->linear.x * 1000;
+    send_vel_data_.tx[4] = int16;
+    send_vel_data_.tx[3] = int16 >> 8;
+
+    int16 = cmd_vel->linear.y * 1000;
+    send_vel_data_.tx[6] = int16;
+    send_vel_data_.tx[5] = int16 >> 8;
+
+    int16 = cmd_vel->angular.z * 1000;
+    send_vel_data_.tx[8] = int16;
+    send_vel_data_.tx[7] = int16 >> 8;
+
+    send_vel_data_.tx[9] = check_sum(9, SEND_DATA_BCC);
+    send_vel_data_.tx[10] = FRAME_TAIL;
+    
+    try {
+        STM32_serial_->write(send_vel_data_.tx, SEND_DATA_SIZE);
+    } catch (serial::IOException& e) {
+        RCLCPP_ERROR(this->get_logger(),("发送信息时出现错误"));
+    }
+}
+
+void xmu_test_robot::recharge_callback(const std_msgs::msg::Int8::SharedPtr recharge_msg) {
+    autorecharge_ = recharge_msg->data;
+}
+
+void xmu_test_robot::set_charge_callback(
+    const shared_ptr<turtlesim::srv::Spawn::Request> request, 
+    const shared_ptr<turtlesim::srv::Spawn::Response> response){
+        send_vel_data_.tx[0] = FRAME_HEAD;
+        if(round(request->x) == 1){
+            send_vel_data_.tx[1] = 1;
+        }
+        else if (round(request->y) == 2){
+            send_vel_data_.tx[1] = 2;
+        }
+        else if (round(request->y) == 0){
+            send_vel_data_.tx[1] = 0, autorecharge_ = 0;
+        }
+
+        for(int i = 2; i <= 8; i++)
+            send_vel_data_.tx[i] = 0;
+
+        // send_vel_data_.tx[2] = 0;
+        // send_vel_data_.tx[3] = 0;
+        // send_vel_data_.tx[4] = 0;
+        // send_vel_data_.tx[5] = 0;
+        // send_vel_data_.tx[6] = 0;
+        // send_vel_data_.tx[7] = 0;
+        // send_vel_data_.tx[8] = 0;
+        send_vel_data_.tx[9] = check_sum(9, SEND_DATA_BCC);
+        send_vel_data_.tx[10] = FRAME_TAIL;
+
+        try {
+            STM32_serial_->write(send_vel_data_.tx, SEND_DATA_SIZE);
+        } catch (serial::IOException& e) {
+            response->name = "false";
+        }
+
+        response->name = send_vel_data_.tx[1] == charger_status ? "true" : "false";
+        if(response->name == "true" && charger_status == 0){
+            autorecharge_ = 0;
+        }
+
+        if(send_vel_data_.tx[1] == 0){
+            if(charger_status == 0){
+                autorecharge_ = 0;
+                response->name = "true";
+            }else{
+                response->name = "false";
+            }
+
+        }
+        else{
+            if(charger_status == 1){
+                response->name = "true";
+            }else{
+                response->name = "false";
+            }
+        }               
+    }
 
 int main(int argc, char** argv){
     rclcpp::intit(argc, argv);

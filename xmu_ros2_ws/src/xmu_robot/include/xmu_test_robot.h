@@ -60,7 +60,6 @@ using namespace std;
 #define RECEIVE_DATA_SIZE 24 // 定义从STM32接收到的数据包的大小，固定为24字节
 #define SEND_DATA_SIZE 11 // 定义发送到STM32的数据包的大小，最大为11字节
 
-
 #define DISTANCE_DATA_SIZE 19 // 定义从STM32接收到的距离数据包的大小，固定为19字节
 #define DISTANCE_HEAD 0XFA // 定义距离数据包的头部字节，用作距离数据包的开始标记
 #define DISTANCE_TAIL 0XFC // 定义距离数据包的尾部字节，用作距离数据包的结束标记
@@ -254,7 +253,7 @@ private:
     bool get_sensor_data_new();
     unsigned char check_sum(unsigned char count_num, unsigned char mode); // BBC 校验函数
     unsigned char check_sum_autoCharge(unsigned char count_num, unsigned char mode);
-    short imu_transform(uint_8 high_bit, uint8_t low_bit);
+    uint16_t imu_transform(uint_8 high_bit, uint8_t low_bit);
     float odom_transform(uint8_t high_bit, uint8_t low_bit);
 
 
