@@ -4,24 +4,24 @@ set -e
 # ---------------------------
 # 基础配置
 # ---------------------------
-echo "🚀 开始安装ROS2 Humble (Ubuntu 22.04)"
+echo " 开始安装ROS2 Humble (Ubuntu 22.04)"
 echo "注：若遇到问题，请查看终端输出或联系开发者"
 
 # 使用清华镜像源加速
 export MIRROR="https://mirrors.tuna.tsinghua.edu.cn"
-echo "🔧 正在配置镜像源: $MIRROR"
+echo " 正在配置镜像源: $MIRROR"
 
 # ---------------------------
 # 第1步：系统准备
 # ---------------------------
-echo -e "\n📦 步骤1/6: 系统更新与基础工具安装"
+echo -e "\n 步骤1/6: 系统更新与基础工具安装"
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl software-properties-common python3-pip gnupg2
 
 # ---------------------------
 # 第2步：配置ROS2仓库
 # ---------------------------
-echo -e "\n🔑 步骤2/6: 配置ROS2仓库"
+echo -e "\n 步骤2/6: 配置ROS2仓库"
 # 添加ROS2 GPG密钥
 # echo "185.199.108.133 raw.githubusercontent.com" >> /etc/hosts
 
@@ -35,15 +35,15 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-a
 # ---------------------------
 # 第3步：安装ROS2
 # ---------------------------
-echo -e "\n💻 步骤3/6: 安装ROS2 Humble"
+echo -e "\n 步骤3/6: 安装ROS2 Humble"
 sudo apt update
 sudo apt upgrade
-sudo apt install -y ros-humble-desktop python3-colcon-common-extensions ros-dev-tools
+sudo apt install -y ros-humble-desktop python3-colcon-common-extensions ros-dev-tools python-rosdep wget git python3-pip python3-vcstool
 
 # ---------------------------
 # 第4步：环境配置
 # ---------------------------
-echo -e "\n⚙️ 步骤4/6: 环境配置"
+echo -e "\n 步骤4/6: 环境配置"
 # 自动检测用户使用的shell类型
 if [ -n "$BASH_VERSION" ]; then
     SHELL_RC="$HOME/.bashrc"
@@ -53,6 +53,7 @@ else
     SHELL_RC="$HOME/.bashrc"
 fi
 
+
 # 添加环境变量
 if ! grep -q "source /opt/ros/humble/setup.bash" "$SHELL_RC"; then
     echo -e "\n# ROS2 Humble" >> "$SHELL_RC"
@@ -60,10 +61,13 @@ if ! grep -q "source /opt/ros/humble/setup.bash" "$SHELL_RC"; then
 fi
 source "$SHELL_RC"
 
+sudo rosdep init
+rosdep update
+
 # ---------------------------
 # 第5步：创建工作区
 # ---------------------------
-echo -e "\n📁 步骤5/6: 创建工作区"
+echo -e "\n 步骤5/6: 创建工作区"
 WORKSPACE_DIR="$HOME/xmu_ros2_ws"
 if [ ! -d "$WORKSPACE_DIR/src" ]; then
     mkdir -p "$WORKSPACE_DIR/src"
@@ -71,6 +75,7 @@ if [ ! -d "$WORKSPACE_DIR/src" ]; then
 else
     echo "  工作区已存在，跳过创建"
 fi
+
 
 # ---------------------------
 # 第6步：验证安装
